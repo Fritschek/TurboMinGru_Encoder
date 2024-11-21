@@ -112,8 +112,11 @@ def load_model(model_path, model_class, device):
     model.load_state_dict(torch.load(model_path, map_location=device))
     return model
 
-def plot_results(ebno_range, results, labels):
-    """Plot BER vs. Eb/N0 for multiple models."""
+def plot_results(ebno_range, results, labels, save_path="results/ber_comparison.png"):
+    """Plot BER vs. Eb/N0 for multiple models and save the plot."""
+    # Ensure the save directory exists
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
     plt.figure(figsize=(10, 6))
     for i, result in enumerate(results):
         plt.semilogy(ebno_range, result, label=labels[i])
@@ -122,7 +125,11 @@ def plot_results(ebno_range, results, labels):
     plt.grid(which="both", linestyle="--", linewidth=0.5)
     plt.legend()
     plt.title("BER Performance Comparison")
-    plt.show()
+
+    # Save the plot
+    plt.savefig(save_path, bbox_inches="tight")
+    logging.info(f"Plot saved to {save_path}")
+    plt.close()
 
 def main():
     setup_logging()
