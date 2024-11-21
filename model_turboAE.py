@@ -107,9 +107,40 @@ def build_encoder_block(num_layer, in_channels, out_channels, kernel_size, activ
 ##########################################
 # ----- MinGRU CLASSES ------
 ##########################################
-
-
 class ENC_GRUTurbo(nn.Module):
+    def __init__(self, config, interleaver):
+        super(ENC_GRUTurbo, self).__init__()
+        self.config = config
+        self.interleaver = interleaver
+                
+        # Initialize the minGRU layers
+        self.enc_rnn_1 = StackedMambaMinGRU(config.enc_num_layer, 1, 3, bias=True)       
+        self.enc_rnn_2 = StackedMambaMinGRU(config.enc_num_layer, 1, 3, bias=True)
+        
+        # Define activation function
+        self.enc_act = F.elu  # Adjust as needed
+
+    def power_constraint(self, x_input):
+        this_mean = torch.mean(x_input)
+        this_std = torch.std(x_input)
+        return (x_input - this_mean) / this_std
+
+    def forward(self, inputs):
+        inputs = inputs.unsqueeze(dim=2).float()  # (batch_size, seq_len, 1)
+    
+        x_sys = self.enc_rnn_1(inputs)  # (batch_size, seq_len, hidden_size)
+
+        # Second minGRU layer with interleaved inputs
+        inputs_interleaved = self.interleaver.interleave(inputs)
+        x_p1 = self.enc_rnn_2(inputs_interleaved)  # (batch_size, seq_len, hidden_size)
+
+        # Concatenate outputs and apply power constraint
+        x_tx = torch.cat([x_sys, x_p1], dim=2)  # (batch_size, seq_len, 2)
+        codes = self.power_constraint(x_tx)  # Apply power constraint as defined
+
+        return codes.squeeze(dim=2)  # (batch_size, seq_len, 2)
+
+class ENC_GRUTurbo_h(nn.Module):
     def __init__(self, config, interleaver):
         super(ENC_GRUTurbo, self).__init__()
         self.config = config

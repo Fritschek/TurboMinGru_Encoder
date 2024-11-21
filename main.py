@@ -19,7 +19,7 @@ import model_prod as model_prod
 
 # Configurations
 config = {
-    'model_type': 'Product_AE',  # Options: 'cnn_turbo', 'gru_turbo'
+    'model_type': 'gru_turbo',  # Options: 'cnn_turbo', 'gru_turbo'
     'num_symbols': 2,
     'd_model': 128, # Dimension of model
     'nhead': 8, # Number of attention heads
@@ -59,8 +59,8 @@ def main():
                                               dec_num_unit=100,
                                               batch_size=config['batch_size'])
         interleaver = model_TAE.Interleaver(config_params)
-        encoder = model_TAE.ENC_CNNTurbo(config_params, interleaver)
-        decoder = model_TAE.DEC_CNNTurbo(config_params, interleaver)
+        encoder = model_TAE.ENC_CNNTurbo(config_params, interleaver).to(device)
+        decoder = model_TAE.DEC_CNNTurbo(config_params, interleaver).to(device)
         
     elif config['model_type'] == 'Product_AE':
         K = [8, 8] # 8*8 = 64

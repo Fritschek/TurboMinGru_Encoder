@@ -40,18 +40,17 @@ class StackedMambaMinGRU(nn.Module):
             h_0 = [None] * self.num_layers
             
         # Track updated hidden states across layers
-        updated_hiddens = []
+        #updated_hiddens = []
 
         # Iterate through each layer, passing the last hidden state as input to the next layer
         for idx, layer in enumerate(self.layers):
             # Pass output hidden state of the current layer as the initial hidden state for the next
             x, h_0[idx] = layer(x, h_0=h_0[idx])
-            updated_hiddens.append(h_0[idx])
             
-        return x, updated_hiddens
+        return x
 
 class MambaModule(nn.Module):
-    def __init__(self, input_size, hidden_size, bias=True, dropout=0.0, proj_down=True, torchGRU=True):
+    def __init__(self, input_size, hidden_size, bias=True, dropout=0.0, proj_down=True):
         super(MambaModule, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -61,8 +60,6 @@ class MambaModule(nn.Module):
         self.strand1_proj = nn.Linear(input_size, hidden_size, bias=bias)
         self.strand1_ln1 = nn.LayerNorm(hidden_size)
         
-        self.torchGRU = torchGRU
-
         # Strand 2
         self.strand2_proj = nn.Linear(input_size, hidden_size, bias=bias)
         self.strand2_ln1 = nn.LayerNorm(hidden_size)
@@ -81,10 +78,7 @@ class MambaModule(nn.Module):
         self.conv_ln = nn.LayerNorm(hidden_size)
 
         # minGRU layer for strand1 with bias handling
-        if torchGRU:
-            self.min_gru = nn.GRU(hidden_size, hidden_size, bias=bias, batch_first=True)
-        else:
-            self.min_gru = minGRU(hidden_size, hidden_size, bias=bias)
+        self.min_gru = minGRU(hidden_size, hidden_size, bias=bias)
         self.gru_ln = nn.LayerNorm(hidden_size)
 
 
@@ -131,10 +125,7 @@ class MambaModule(nn.Module):
         if h_0 is None:
             if self.training:
                 # For training, hidden state shape is (batch_size, 1, hidden_size)
-                if self.torchGRU == False:
-                    h_0 = torch.zeros(batch_size, 1, self.hidden_size, device=x.device)
-                else:
-                    h_0 = torch.zeros(batch_size, self.hidden_size, device=x.device)
+                h_0 = torch.zeros(batch_size, 1, self.hidden_size, device=x.device)
             else:
                 # For inference, hidden state shape is (batch_size, hidden_size)
                 h_0 = torch.zeros(batch_size, self.hidden_size, device=x.device)

@@ -90,7 +90,7 @@ def test_model(encoder, decoder, test_size, batch_size, sequence_length, num_sym
             ber.append(compute_ber(decoded_output, input_data, mode="binary"))
         logging.info(f"Test BER: {np.mean(ber):.4f}")
 
-def overfit_single_batch(encoder, decoder, device, batch_size, sequence_length, num_symbols, learning_rate, ebno_db, rate, num_iterations=10000,  **kwargs):
+def overfit_single_batch(encoder, decoder, device, batch_size, sequence_length, num_symbols, learning_rate, ebno_db, rate, num_iterations=1000,  **kwargs):
     optimizer = optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=learning_rate, weight_decay=0.01)
     input_data = generate_data(batch_size, sequence_length, num_symbols).to(device)
     
@@ -128,7 +128,7 @@ def overfit_single_batch(encoder, decoder, device, batch_size, sequence_length, 
     
     for iteration in range(num_iterations):
         optimizer.zero_grad()
-        encoded_data= encoder(input_data)
+        encoded_data = encoder(input_data)
         noisy_data = awgn_channel(encoded_data, ebno_db, rate, device)
         decoded_output = decoder(noisy_data)
         loss = F.binary_cross_entropy(decoded_output, input_data)

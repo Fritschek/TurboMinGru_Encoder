@@ -3,10 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import logging
 import os
-from model_turboAE import ENC_CNNTurbo, DEC_CNNTurbo, ENC_CNNTurbo_serial, DEC_CNNTurbo_serial, ENC_GRUTurbo
+from model_turboAE import TurboConfig, Interleaver, ENC_CNNTurbo, DEC_CNNTurbo, ENC_CNNTurbo_serial, DEC_CNNTurbo_serial, ENC_GRUTurbo
 from model_prod import ProductAEEncoder, ProdDecoder
-
-
 
 # Data Generation Function
 def generate_data(batch_size, sequence_length, num_symbols):
@@ -15,15 +13,6 @@ def generate_data(batch_size, sequence_length, num_symbols):
 def compute_ber(decoded_output, inputs, num_symbols=None, mode="symbol"):
     """
     Calculate the Bit Error Rate (BER) for different types of decoded outputs.
-
-    Arguments:
-        decoded_output (torch.Tensor): Predicted outputs, either softmax/one-hot encoded or binary.
-        inputs (torch.Tensor): Ground truth values, either symbol indices or binary values.
-        num_symbols (int, optional): Number of unique symbols (required for "symbol" mode).
-        mode (str): "symbol" for one-hot encoded outputs or "binary" for sigmoid outputs.
-
-    Returns:
-        float: Calculated BER.
     """
     if mode == "symbol":
         # Calculate Symbol Error Rate (SER) for softmax/one-hot encoded outputs
@@ -72,51 +61,36 @@ def awgn_channel(encoded_data, ebno_db, rate, device, decoder_training=False, eb
     noisy_data = encoded_data + noise
     return noisy_data
 
+# Main functions
+
 def setup_logging():
     log_directory = "logs"
-    if not os.path.exists(log_directory):
-        os.makedirs(log_directory)
-    filename = "test_models.log"
-    log_path = os.path.join(log_directory, filename)
-    logging.basicConfig(filename=log_path, level=logging.INFO,
+    os.makedirs(log_directory, exist_ok=True)
+    logging.basicConfig(filename=os.path.join(log_directory, "test_all_models.log"), 
+                        level=logging.INFO,
                         format='%(asctime)s:%(levelname)s:%(message)s')
 
-def test_model(encoder, decoder, test_size, batch_size, sequence_length, num_symbols, ebno_db, rate, device):
+def test_model(encoder, decoder, config, ebno_db):
     """Test the model over a specified Eb/N0 and return the BER."""
-    encoder.eval()  # Set the encoder to evaluation mode
-    decoder.eval()  # Set the decoder to evaluation mode
+    encoder.eval()
+    decoder.eval()
+    ber = []
+    num_batches = int(config['test_size'] / config['batch_size'])
 
-    ber = []  # Store BER for each batch
-    num_batches = int(test_size / batch_size)
-
-    with torch.no_grad():  # Disable gradient calculation for inference
-        for i in range(num_batches):
-            # Generate input data
-            input_data = generate_data(batch_size, sequence_length, num_symbols).to(device)
-
-            # Forward pass through the model
+    with torch.no_grad():
+        for _ in range(num_batches):
+            input_data = generate_data(config['batch_size'], config['sequence_length'], config['num_symbols']).to(config['device'])
             encoded_data = encoder(input_data)
-            noisy_data = awgn_channel(encoded_data, ebno_db, rate, device)
+            noisy_data = awgn_channel(encoded_data, ebno_db, config['rate'], config['device'])
             decoded_output = decoder(noisy_data)
-
-            # Compute BER for the batch
             ber.append(compute_ber(decoded_output, input_data, mode="binary"))
 
     avg_ber = np.mean(ber)
     logging.info(f"Eb/N0: {ebno_db} dB, Test BER: {avg_ber:.4e}")
     return avg_ber
 
-def load_model(model_path, model_class, device):
-    """Load a model from file."""
-    model = model_class().to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    return model
-
 def plot_results(ebno_range, results, labels, save_path="results/ber_comparison.png"):
-    """Plot BER vs. Eb/N0 for multiple models and save the plot."""
-    # Ensure the save directory exists
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-
     plt.figure(figsize=(10, 6))
     for i, result in enumerate(results):
         plt.semilogy(ebno_range, result, label=labels[i])
@@ -125,8 +99,6 @@ def plot_results(ebno_range, results, labels, save_path="results/ber_comparison.
     plt.grid(which="both", linestyle="--", linewidth=0.5)
     plt.legend()
     plt.title("BER Performance Comparison")
-
-    # Save the plot
     plt.savefig(save_path, bbox_inches="tight")
     logging.info(f"Plot saved to {save_path}")
     plt.close()
@@ -135,67 +107,126 @@ def main():
     setup_logging()
 
     # Configuration
-    ebno_range = np.arange(0, 6.5, 0.5)  # Range of Eb/N0 values to test
-    test_size = 10000
-    batch_size = 500
-    sequence_length = 64
-    num_symbols = 2
-    rate = 64 / 128  # Assume rate as sequence_length / channel_length
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    config = {
+        'ebno_range': np.arange(0, 6.5, 0.5),
+        'test_size': 10000,
+        'batch_size': 500,
+        'sequence_length': 64,
+        'num_symbols': 2,
+        'rate': 64 / 128,
+        'device': torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    }
 
-    # Model paths and labels
-    model_configs = [
+    # List of models to test
+    models = [
         {
-            "encoder_path": "saved_models/cnn_turbo_encoder.pth",
-            "decoder_path": "saved_models/cnn_turbo_decoder.pth",
-            "model_type": "cnn_turbo",
-            "encoder_class": ENC_CNNTurbo,
-            "decoder_class": DEC_CNNTurbo
+            'name': 'cnn_turbo',
+            'init': lambda: {
+                'config_params': (config_params := TurboConfig(
+                    block_len=config['sequence_length'],
+                    enc_num_unit=100,
+                    dec_num_unit=100,
+                    batch_size=config['batch_size']
+                )),
+                'interleaver': (interleaver := Interleaver(config_params).to(config['device'])),
+                'encoder': lambda: (
+                    model := ENC_CNNTurbo(config_params, interleaver).to(config['device']),
+                    model.load_state_dict(torch.load("saved_models/cnn_turbo_encoder.pth", map_location=config['device'])),
+                    model
+                )[-1],
+                'decoder': lambda: (
+                    model := DEC_CNNTurbo(config_params, interleaver).to(config['device']),
+                    model.load_state_dict(torch.load("saved_models/cnn_turbo_decoder.pth", map_location=config['device'])),
+                    model
+                )[-1]
+            }
         },
         {
-            "encoder_path": "saved_models/CNN_turbo_serial_encoder.pth",
-            "decoder_path": "saved_models/CNN_turbo_serial_decoder.pth",
-            "model_type": "CNN_turbo_serial",
-            "encoder_class": ENC_CNNTurbo_serial,
-            "decoder_class": DEC_CNNTurbo_serial
+            'name': 'CNN_turbo_serial',
+            'init': lambda: {
+                'config_params': (config_params := TurboConfig(
+                    block_len=config['sequence_length'],
+                    enc_num_unit=100,
+                    dec_num_unit=100,
+                    batch_size=config['batch_size']
+                )),
+                'interleaver': (interleaver := Interleaver(config_params).to(config['device'])),
+                'encoder': lambda: (
+                    model := ENC_CNNTurbo_serial(config_params, interleaver).to(config['device']),
+                    model.load_state_dict(torch.load("saved_models/CNN_turbo_serial_encoder.pth", map_location=config['device'])),
+                    model
+                )[-1],
+                'decoder': lambda: (
+                    model := DEC_CNNTurbo_serial(config_params, interleaver).to(config['device']),
+                    model.load_state_dict(torch.load("saved_models/CNN_turbo_serial_decoder.pth", map_location=config['device'])),
+                    model
+                )[-1]
+            }
         },
         {
-            "encoder_path": "saved_models/Product_AE_encoder.pth",
-            "decoder_path": "saved_models/Product_AE_decoder.pth",
-            "model_type": "Product_AE",
-            "encoder_class": ProductAEEncoder,
-            "decoder_class": ProdDecoder
+            'name': 'Product_AE',
+            'init': lambda: {
+                'K': (K := [8, 8]),  # Dimensions for Product_AE
+                'N': (N := [8, 16]),  # Dimensions for Product_AE
+                'I': (I := 4),  # Iterations for decoding
+                'encoder': lambda: (
+                    model := ProductAEEncoder(K, N).to(config['device']),
+                    model.load_state_dict(torch.load("saved_models/Product_AE_encoder.pth", map_location=config['device'])),
+                    model
+                )[-1],
+                'decoder': lambda: (
+                    model := ProdDecoder(I, K, N).to(config['device']),
+                    model.load_state_dict(torch.load("saved_models/Product_AE_decoder.pth", map_location=config['device'])),
+                    model
+                )[-1]
+            }
         },
         {
-            "encoder_path": "saved_models/CNN_turbo_serial_encoder.pth",
-            "decoder_path": "saved_models/CNN_turbo_serial_decoder.pth",
-            "model_type": "CNN_turbo_serial",
-            "encoder_class": ENC_GRUTurbo,
-            "decoder_class": DEC_CNNTurbo_serial
-        },
+            'name': 'gru_turbo',
+            'init': lambda: {
+                'config_params': (config_params := TurboConfig(
+                    block_len=config['sequence_length'],
+                    enc_num_unit=100,
+                    dec_num_unit=100,
+                    batch_size=config['batch_size']
+                )),
+                'interleaver': (interleaver := Interleaver(config_params).to(config['device'])),
+                'encoder': lambda: (
+                    model := ENC_GRUTurbo(config_params, interleaver).to(config['device']),
+                    model.load_state_dict(torch.load("saved_models/gru_turbo_encoder.pth", map_location=config['device'])),
+                    model
+                )[-1],
+                'decoder': lambda: (
+                    model := DEC_CNNTurbo(config_params, interleaver).to(config['device']),
+                    model.load_state_dict(torch.load("saved_models/gru_turbo_decoder.pth", map_location=config['device'])),
+                    model
+                )[-1]
+            }
+        }
     ]
+
 
     results = []
     labels = []
 
-    for config in model_configs:
-        logging.info(f"Testing model: {config['model_type']}")
-        
-        # Load encoder and decoder
-        encoder = load_model(config['encoder_path'], config['encoder_class'], device)
-        decoder = load_model(config['decoder_path'], config['decoder_class'], device)
+    for model in models:
+        logging.info(f"Testing model: {model['name']}")
+        # Initialize the model components
+        init = model['init']()
+
+        encoder = init['encoder']()
+        decoder = init['decoder']()
 
         # Test over the Eb/N0 range
         ber_result = []
-        for ebno_db in ebno_range:
-            ber_result.append(test_model(encoder, decoder, test_size, batch_size,
-                                         sequence_length, num_symbols, ebno_db, rate, device))
-        
+        for ebno_db in config['ebno_range']:
+            ber_result.append(test_model(encoder, decoder, config, ebno_db))
         results.append(ber_result)
-        labels.append(config['model_type'])
+        labels.append(model['name'])
 
-    # Plot results
-    plot_results(ebno_range, results, labels)
+    # Plot and save results
+    plot_results(config['ebno_range'], results, labels, save_path="results/ber_comparison.png")
 
 if __name__ == '__main__':
     main()
+
