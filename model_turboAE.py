@@ -104,6 +104,22 @@ def build_encoder_block(num_layer, in_channels, out_channels, kernel_size, activ
     layers.append(ModuleLambda(lambda x: torch.transpose(x, 1, 2)))
     return nn.Sequential(*layers)
 
+class SaturatedSTE(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input):
+        # Clamp the input to a specific range (e.g., [-1, 1])
+        ctx.save_for_backward(input)
+        return input.clamp(-1, 1)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        # Pass gradients only in the range [-1, 1], else 0
+        input, = ctx.saved_tensors
+        grad_input = grad_output.clone()
+        grad_input[input < -1] = 0
+        grad_input[input > 1] = 0
+        return grad_input
+
 ##########################################
 # ----- MinGRU CLASSES ------
 ##########################################
@@ -114,8 +130,8 @@ class ENC_GRUTurbo(nn.Module):
         self.interleaver = interleaver
                 
         # Initialize the minGRU layers
-        self.enc_rnn_1 = StackedMambaMinGRU(config.enc_num_layer, 1, 3, bias=True)       
-        self.enc_rnn_2 = StackedMambaMinGRU(config.enc_num_layer, 1, 3, bias=True)
+        self.enc_rnn_1 = StackedMambaMinGRU(config.enc_num_layer, 1, 7, bias=True)       
+        self.enc_rnn_2 = StackedMambaMinGRU(config.enc_num_layer, 1, 7, bias=True)
         
         # Define activation function
         self.enc_act = F.elu  # Adjust as needed
@@ -664,8 +680,10 @@ class ENC_CNNTurbo_serial(nn.Module):
         # Output from first CNN structure
         x_sys = self.enc_cnn_1(inputs)
         x_sys_ = F.elu(self.enc_linear_1(x_sys))
+        
+        x_sys_ste = SaturatedSTE.apply(x_sys_)
 
-        x_sys_interleaved = self.interleaver.interleave(x_sys)       
+        x_sys_interleaved = self.interleaver.interleave(x_sys_ste)       
         # Pass interleaved output through second CNN structure
         x_p1 = self.enc_cnn_2(x_sys_interleaved)
         
