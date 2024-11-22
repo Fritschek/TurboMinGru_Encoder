@@ -662,11 +662,11 @@ class ENC_CNNTurbo_serial(nn.Module):
         self.this_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Updated the encoder CNN layers. Now the first CNN produces k*Fc features and the second one processes them
-        self.enc_cnn_1 = build_encoder_block(config.enc_num_layer, config.code_rate_k, config.code_rate_k * 10, config.enc_kernel_size)
+        self.enc_cnn_1 = build_encoder_block(config.enc_num_layer, config.code_rate_k, config.enc_num_unit, config.enc_kernel_size)
         self.enc_cnn_2 = build_encoder_block(config.enc_num_layer, config.code_rate_k * 10, config.enc_num_unit, config.enc_kernel_size)
         
-        self.enc_linear_1 = nn.Linear(config.code_rate_k * 10, 1)
-        self.enc_linear_2 = nn.Linear(config.enc_num_unit, 1)
+        self.enc_linear_1 = nn.Linear(config.enc_num_unit, 10)
+        self.enc_linear_2 = nn.Linear(config.enc_num_unit, 2)
 
     def power_constraint(self, x_input):
         this_mean = torch.mean(x_input)
@@ -687,11 +687,9 @@ class ENC_CNNTurbo_serial(nn.Module):
         # Pass interleaved output through second CNN structure
         x_p1 = self.enc_cnn_2(x_sys_interleaved)
         
-        x_p1 = F.elu(self.enc_linear_2(x_p1))
-
-        x_tx = torch.cat([x_sys_, x_p1], dim=2)
+        out = F.elu(self.enc_linear_2(x_p1))
         
-        codes = self.power_constraint(x_tx)
+        codes = self.power_constraint(out)
 
         return codes.squeeze(dim=2)
     
@@ -710,21 +708,21 @@ class DEC_CNNTurbo_serial(nn.Module):
         self.interleaver = interleaver
         
         self.dec1_cnns = torch.nn.ModuleList([
-            build_encoder_block(config.dec_num_layer, 2 + config.num_iter_ft, config.dec_num_unit, config.dec_kernel_size)
+            build_encoder_block(config.dec_num_layer, 2 + 10, config.dec_num_unit, config.dec_kernel_size)
             for _ in range(config.num_iteration)
         ])
         
         self.dec2_cnns = torch.nn.ModuleList([
-            build_encoder_block(config.dec_num_layer, 2 + config.num_iter_ft, config.dec_num_unit, config.dec_kernel_size)
+            build_encoder_block(config.dec_num_layer, 10, config.dec_num_unit, config.dec_kernel_size)
             for _ in range(config.num_iteration)
         ])
         
         self.dec1_outputs = torch.nn.ModuleList([
-            torch.nn.Linear(config.dec_num_unit, config.num_iter_ft) for _ in range(config.num_iteration)
+            torch.nn.Linear(config.dec_num_unit, 10) for _ in range(config.num_iteration)
         ])
         
         self.dec2_outputs = torch.nn.ModuleList([
-            torch.nn.Linear(config.dec_num_unit, 1 if idx == config.num_iteration - 1 else config.num_iter_ft)
+            torch.nn.Linear(config.dec_num_unit, 1 if idx == config.num_iteration - 1 else 10)
             for idx in range(config.num_iteration)
         ])
     
@@ -735,34 +733,30 @@ class DEC_CNNTurbo_serial(nn.Module):
         received = received.type(torch.FloatTensor).to(self.this_device)
         
         # Initialize prior
-        prior = torch.zeros((bs, self.config.block_len, self.config.num_iter_ft)).to(self.this_device)
+        prior = torch.zeros((bs, self.config.block_len, 10)).to(self.this_device)
         
         # Iterative Decoding Loop
-        for idx in range(self.config.num_iteration-1):
-            x_dec1, x_plr1 = self._turbo_decoder_step(received, prior, self.dec1_cnns[idx], self.dec1_outputs[idx])
-            x_plr1_extrinsic = x_plr1 - prior  # Compute extrinsic information
-            x_plr1_extrinsic_int = self.interleaver.deinterleave(x_plr1_extrinsic)  # Interleave the extrinsic information
+        for idx in range(self.config.num_iteration):
+            x_dec1, x_plr1 = self._turbo_decoder_step1(received, prior, self.dec1_cnns[idx], self.dec1_outputs[idx])
+            x_plr1_ex = x_plr1 - prior  # Compute extrinsic information
+            x_plr1_ex_int = self.interleaver.deinterleave(x_plr1_ex)  # Interleave the extrinsic information
             
-            x_dec1_transf = self.transform_layer(x_dec1)
-            x_dec2, x_plr2 = self._turbo_decoder_step(x_dec1_transf, x_plr1_extrinsic_int, self.dec2_cnns[idx], self.dec2_outputs[idx])
-            x_plr2_extrinsic = x_plr2 - x_plr1_extrinsic_int  # Compute extrinsic information
-            prior = self.interleaver.interleave(x_plr2_extrinsic)  # Deinterleave the extrinsic information for the next iteration
+            x_dec2, x_plr2 = self._turbo_decoder_step2(x_plr1_ex_int, self.dec2_cnns[idx], self.dec2_outputs[idx])
+            x_plr2_ex = x_plr2 - x_plr1_ex_int  # Compute extrinsic information
+            prior = self.interleaver.interleave(x_plr2_ex)  # Deinterleave the extrinsic information for the next iteration
         # -----------    
-        # last round
-        x_dec1, x_plr1 = self._turbo_decoder_step(received, prior, self.dec1_cnns[-1], self.dec1_outputs[-1])
-        x_plr1_extrinsic = x_plr1 - prior  # Compute extrinsic information
-        x_plr1_extrinsic_int = self.interleaver.deinterleave(x_plr1_extrinsic)  # Interleave the extrinsic information
-            
-        # Decoder 2 Processing
-        x_dec1_transf = self.transform_layer(x_dec1)
-        x_dec2, x_plr2 = self._turbo_decoder_step(x_dec1_transf, x_plr1_extrinsic_int, self.dec2_cnns[-1], self.dec2_outputs[-1])
-        out = torch.sigmoid(self.interleaver.interleave(x_plr2))
+        out = torch.sigmoid(x_plr2)
         
         return out.squeeze(dim=2)  # Return the final output of Decoder 2
 
-    def _turbo_decoder_step(self, input, prior, cnn, linear):
+    def _turbo_decoder_step1(self, input, prior, cnn, linear):
         x_this_dec = torch.cat([input, prior], dim=2)
         x_dec = cnn(x_this_dec)
+        x_plr = linear(x_dec)
+        return x_dec, x_plr
+    
+    def _turbo_decoder_step2(self, input, cnn, linear):
+        x_dec = cnn(input)
         x_plr = linear(x_dec)
         return x_dec, x_plr
     

@@ -19,7 +19,7 @@ import model_prod as model_prod
 
 # Configurations
 config = {
-    'model_type': 'gru_turbo',  # Options: 'cnn_turbo', 'gru_turbo'
+    'model_type': 'CNN_turbo_serial',  # Options: 'cnn_turbo', 'gru_turbo'
     'num_symbols': 2,
     'd_model': 128, # Dimension of model
     'nhead': 8, # Number of attention heads
