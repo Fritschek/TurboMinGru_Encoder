@@ -19,14 +19,14 @@ import model_prod as model_prod
 
 # Configurations
 config = {
-    'model_type': 'CNN_turbo_serial',  # Options: 'cnn_turbo', 'gru_turbo'
+    'model_type': 'gru_turbo',  # Options: 'cnn_turbo', 'gru_turbo'
     'num_symbols': 2,
     'd_model': 128, # Dimension of model
     'nhead': 8, # Number of attention heads
     'num_layers': 3, # Number of transformer layers
     'dim_feedforward': 512, # Feedforward dimension in transformer
-    'batch_size': 500,
-    'sample_size': 5000,
+    'batch_size': 128,
+    'sample_size': 50000,
     'sequence_length': 64,
     'channel_length': 128,
     'rate': 64 / 128,  # sequence_length / channel_length
@@ -112,20 +112,25 @@ def main():
         encoder = torch.nn.DataParallel(encoder)
         decoder = torch.nn.DataParallel(decoder)
     
-    #train.train_model_alternate(encoder, decoder, **config)
-    train.overfit_single_batch(encoder, decoder, device, **config)
+    train.train_model_alternate(encoder, decoder, **config)
+    #train.overfit_single_batch(encoder, decoder, device, **config)
     
     save_models(encoder, decoder, config['model_type'])
     
 def save_models(encoder, decoder, model_type):
-    """Saves the encoder and decoder models."""
+    """Saves the encoder and decoder models without overriding existing files."""
     model_save_dir = "saved_models"
     if not os.path.exists(model_save_dir):
         os.makedirs(model_save_dir)
 
-    # File paths for saving
+    # Generate unique filenames if files already exist
     encoder_save_path = os.path.join(model_save_dir, f"{model_type}_encoder.pth")
     decoder_save_path = os.path.join(model_save_dir, f"{model_type}_decoder.pth")
+
+    if os.path.exists(encoder_save_path) or os.path.exists(decoder_save_path):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        encoder_save_path = os.path.join(model_save_dir, f"{model_type}_encoder_{timestamp}.pth")
+        decoder_save_path = os.path.join(model_save_dir, f"{model_type}_decoder_{timestamp}.pth")
 
     # Save the models
     torch.save(encoder.state_dict(), encoder_save_path)
