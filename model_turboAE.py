@@ -19,15 +19,15 @@ from mingru_stacks import WrappedMinGRU
 class TurboConfig:
     num_iteration = 6
     code_rate_k = 1
-    dec_num_layer = 2
-    dec_num_unit = 10
+    #dec_num_layer = 5
+    dec_num_unit = 100
     dec_kernel_size = 5
     enc_num_unit = 100
-    enc_num_layer = 3
+    #enc_num_layer = 5
     enc_kernel_size = 5
     num_iter_ft = 5
     #batch_size = 32
-    block_len = 24
+    #block_len = 64
     def __init__(self, **kwargs):
         for k,v in kwargs.items():
             setattr(self, k, v)
@@ -130,8 +130,8 @@ class ENC_GRUTurbo(nn.Module):
         self.interleaver = interleaver
                 
         # Initialize the minGRU layers
-        self.enc_rnn_1 = StackedMambaMinGRU(config.enc_num_layer, 1, 7, bias=True)       
-        self.enc_rnn_2 = StackedMambaMinGRU(config.enc_num_layer, 1, 7, bias=True)
+        self.enc_rnn_1 = StackedMambaMinGRU(config.enc_num_layer, 1, config.hidden_size_gru, bias=True)       
+        self.enc_rnn_2 = StackedMambaMinGRU(config.enc_num_layer, 1, config.hidden_size_gru, bias=True)
         
         # Define activation function
         self.enc_act = F.elu  # Adjust as needed
@@ -177,17 +177,17 @@ class ENC_GRUTurbo_h(nn.Module):
     def forward(self, inputs, h_0_1=None, h_0_2=None):
         inputs = inputs.unsqueeze(dim=2).float()  # (batch_size, seq_len, 1)
     
-        x_sys, h_0_1 = self.enc_rnn_1(inputs, h_0=h_0_1)  # (batch_size, seq_len, hidden_size)
+        x_sys = self.enc_rnn_1(inputs)  # (batch_size, seq_len, hidden_size)
 
         # Second minGRU layer with interleaved inputs
         inputs_interleaved = self.interleaver.interleave(inputs)
-        x_p1, h_0_2 = self.enc_rnn_2(inputs_interleaved, h_0=h_0_2)  # (batch_size, seq_len, hidden_size)
+        x_p1 = self.enc_rnn_2(inputs_interleaved)  # (batch_size, seq_len, hidden_size)
 
         # Concatenate outputs and apply power constraint
         x_tx = torch.cat([x_sys, x_p1], dim=2)  # (batch_size, seq_len, 2)
         codes = self.power_constraint(x_tx)  # Apply power constraint as defined
 
-        return codes.squeeze(dim=2), [h_0_1, h_0_2]  # (batch_size, seq_len, 2), hidden states
+        return codes.squeeze(dim=2)  # (batch_size, seq_len, 2), hidden states
     
 class DEC_GRUTurbo_test(nn.Module):
     def __init__(self, config, interleaver):
@@ -703,8 +703,6 @@ class DEC_CNNTurbo_serial(nn.Module):
         
         self.this_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        
-        self.transform_layer = nn.Linear(config.dec_num_unit, 2)
         self.interleaver = interleaver
         
         self.dec1_cnns = torch.nn.ModuleList([

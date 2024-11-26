@@ -173,7 +173,7 @@ def train_model(encoder, decoder, device, epochs, batch_size, sequence_length, n
         
     print("Training finished.")
 
-def train_model_alternate(encoder, decoder, device, epochs, batch_size, sequence_length, num_symbols, learning_rate, ebno_db, rate, sample_size, **kwargs):
+def train_model_alternate(encoder, decoder, device, epochs, batch_size, dec_bs_fac, sequence_length, num_symbols, learning_rate, ebno_db, rate, sample_size, **kwargs):
     
     encoder_optimizer = optim.AdamW(encoder.parameters(), lr=learning_rate, weight_decay=0.01)
     decoder_optimizer = optim.AdamW(decoder.parameters(), lr=learning_rate, weight_decay=0.01)
@@ -184,23 +184,23 @@ def train_model_alternate(encoder, decoder, device, epochs, batch_size, sequence
 
     total_batches = int(sample_size / batch_size)
     
-    def encoder_forward(inputs, h_0=None, update_hidden=True):
-        # Dynamically handle hidden states based on encoder type
-        if update_hidden and h_0 is not None:
-            encoded_data, *hidden_states = encoder(inputs, *h_0)
-            hidden_states = [h.detach() for h in hidden_states]  # Detach to prevent backprop across batches
-            return encoded_data, hidden_states
-        else:
-            return encoder(inputs), None  # Encoder does not require hidden states
+    #def encoder_forward(inputs, h_0=None, update_hidden=True):
+    #    # Dynamically handle hidden states based on encoder type
+    #    if update_hidden and h_0 is not None:
+    #        encoded_data, *hidden_states = encoder(inputs, *h_0)
+    #        hidden_states = [h.detach() for h in hidden_states]  # Detach to prevent backprop across batches
+    #        return encoded_data, hidden_states
+    #    else:
+    #        return encoder(inputs), None  # Encoder does not require hidden states
 
     for epoch in range(epochs):
         ber, loss_ = [],[]
-        h_0 = [None, None] if getattr(encoder, "enc_rnn_1", None) else None  # Init hidden states if encoder needs it
+        #h_0 = [None, None] if getattr(encoder, "enc_rnn_1", None) else None  # Init hidden states if encoder needs it
         
         for _ in range(total_batches):
             encoder_optimizer.zero_grad()
             input_data = generate_data(batch_size, sequence_length, num_symbols).to(device)
-            encoded_data, h_0 = encoder_forward(input_data, h_0=h_0)
+            encoded_data = encoder(input_data)
             noisy_data = awgn_channel(encoded_data, ebno_db, rate, device, decoder_training=False)
             decoded_output = decoder(noisy_data)
             loss = F.binary_cross_entropy(decoded_output, input_data)
@@ -210,14 +210,14 @@ def train_model_alternate(encoder, decoder, device, epochs, batch_size, sequence
             #nn_utils.clip_grad_norm_(list(encoder.parameters()) + list(decoder.parameters()), max_norm=1)
             encoder_optimizer.step()
             
-        logging.info(f"Encoder: Epoch [{epoch+1}/{epochs}], Loss: {np.mean(loss_):.4f}, Ber: {np.mean(ber):.4f}")
+        logging.info(f"Encoder: Epoch [{epoch+1}/{epochs}], Loss: {np.mean(loss_):.6f}, Ber: {np.mean(ber):.6f}")
 
         ber, loss_ = [], []
 
         for _ in range(5 * total_batches):
             decoder_optimizer.zero_grad()
-            input_data = generate_data(batch_size, sequence_length, num_symbols).to(device)
-            encoded_data, _ = encoder_forward(input_data, update_hidden=False)  # Skip hidden state updates for decoder phase
+            input_data = generate_data(batch_size*dec_bs_fac, sequence_length, num_symbols).to(device)
+            encoded_data= encoder(input_data)  # Skip hidden state updates for decoder phase
             encoded_data = encoded_data.detach()
             noisy_data = awgn_channel(encoded_data, ebno_db, rate, device, decoder_training=True)
             decoded_output = decoder(noisy_data)
@@ -229,7 +229,7 @@ def train_model_alternate(encoder, decoder, device, epochs, batch_size, sequence
             decoder_optimizer.step()
             
 
-        logging.info(f"Decoder: Epoch [{epoch+1}/{epochs}], Loss: {np.mean(loss_):.4f}, Ber: {np.mean(ber):.4f}")
+        logging.info(f"Decoder: Epoch [{epoch+1}/{epochs}], Loss: {np.mean(loss_):.6f}, Ber: {np.mean(ber):.6f}")
         if (epoch + 1) % 50 == 0:
             test_model(encoder, decoder, sample_size, batch_size, sequence_length, num_symbols, ebno_db, rate, device)
     logging.info("Training finished.")
