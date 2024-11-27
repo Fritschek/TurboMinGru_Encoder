@@ -184,7 +184,9 @@ def main():
                     block_len=config['sequence_length'],
                     enc_num_unit=100,
                     dec_num_unit=100,
-                    batch_size=config['batch_size']
+                    batch_size=config['batch_size'],
+                    enc_num_layer=config['enc_num_layers'],
+                    dec_num_layer=config['dec_num_layers']
                 )),
                 'interleaver': (interleaver := Interleaver(config_params).to(config['device'])),
                 'encoder': lambda: (
@@ -206,7 +208,9 @@ def main():
                     block_len=config['sequence_length'],
                     enc_num_unit=100,
                     dec_num_unit=100,
-                    batch_size=config['batch_size']
+                    batch_size=config['batch_size'],
+                    enc_num_layer= config['enc_num_layers'],
+                    dec_num_layer=config['dec_num_layers']
                 )),
                 'interleaver': (interleaver := Interleaver(config_params).to(config['device'])),
                 'encoder': lambda: (
@@ -246,7 +250,10 @@ def main():
                     block_len=config['sequence_length'],
                     enc_num_unit=100,
                     dec_num_unit=100,
-                    batch_size=config['batch_size']
+                    batch_size=config['batch_size'],
+                    enc_num_layer= config['enc_num_layers'],
+                    hidden_size_gru=config['hidden_size_gru'],
+                    dec_num_layer=config['dec_num_layers']
                 )),
                 'interleaver': (interleaver := Interleaver(config_params).to(config['device'])),
                 'encoder': lambda: (
