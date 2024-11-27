@@ -172,7 +172,10 @@ def main():
         'sequence_length': 64,
         'num_symbols': 2,
         'rate': 64 / 128,
-        'device': torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        'device': torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+        'enc_num_layers' : 3,
+        'dec_num_layers' : 2,
+        'hidden_size_gru' : 4      
     }
 
     # List of models to test
