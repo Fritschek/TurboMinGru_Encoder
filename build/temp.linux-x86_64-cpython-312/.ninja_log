@@ -1,0 +1,6 @@
+# ninja log v5
+1	38855	1738595237194956489	/home/entropy/GitHub/TurboMinGru_Encoder/build/temp.linux-x86_64-cpython-312/fused_log_scan_kernel.o	bf5c114c4fa5d35f
+17	37976	1738596462161627513	/home/entropy/GitHub/TurboMinGru_Encoder/build/temp.linux-x86_64-cpython-312/fused_log_scan_kernel.o	bf5c114c4fa5d35f
+17	37638	1738598902754969733	/home/entropy/GitHub/TurboMinGru_Encoder/build/temp.linux-x86_64-cpython-312/fused_log_scan_kernel.o	bf5c114c4fa5d35f
+145	35166	1739184087908280868	/home/entropy/GitHub/TurboMinGru_Encoder/build/temp.linux-x86_64-cpython-312/fused_log_scan_kernel.o	bf5c114c4fa5d35f
+4	33521	1739184463918282123	/home/entropy/GitHub/TurboMinGru_Encoder/build/temp.linux-x86_64-cpython-312/fused_parallel_scan_kernel.o	f3103afec0d501f8
