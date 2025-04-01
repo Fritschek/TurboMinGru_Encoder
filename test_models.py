@@ -10,27 +10,6 @@ from model_prod import ProductAEEncoder, ProdDecoder
 def generate_data(batch_size, sequence_length, num_symbols):
     return torch.randint(0, num_symbols, (batch_size, sequence_length), dtype=torch.float)
 
-def compute_bler(decoded_output, inputs, mode="symbol", num_symbols=None):
-    """
-    Calculate the Block Error Rate (BLER).
-    """
-    if mode == "symbol":
-        if num_symbols is None:
-            raise ValueError("num_symbols must be specified when mode is 'symbol'")
-        
-        predicted_symbols = torch.argmax(decoded_output, dim=-1)
-        block_errors = (predicted_symbols != inputs).any(dim=1).float()
-        BLER = torch.mean(block_errors).detach().cpu().item()
-
-    elif mode == "binary":
-        binary_predictions = torch.round(decoded_output)
-        block_errors = torch.any(binary_predictions != inputs, dim=1).float()
-        BLER = torch.mean(block_errors).detach().cpu().item()
-    else:
-        raise ValueError("Unsupported mode. Choose 'symbol' or 'binary'.")
-    
-    return BLER
-
 def compute_ber(decoded_output, inputs, num_symbols=None, mode="symbol"):
     """
     Calculate the Bit Error Rate (BER) for different types of decoded outputs.
@@ -40,8 +19,11 @@ def compute_ber(decoded_output, inputs, num_symbols=None, mode="symbol"):
         if num_symbols is None:
             raise ValueError("num_symbols must be specified when mode is 'symbol'")
 
+        # Get predicted symbols from softmax or one-hot encoded outputs
         predicted_symbols = torch.argmax(decoded_output, dim=-1)
+        # Calculate the number of symbol errors
         symbol_errors = (predicted_symbols != inputs).sum().item()
+        # Calculate Symbol Error Rate (SER)
         SER = symbol_errors / inputs.numel()
         
         # Convert SER to BER
@@ -49,8 +31,12 @@ def compute_ber(decoded_output, inputs, num_symbols=None, mode="symbol"):
         BER = SER * bits_per_symbol
 
     elif mode == "binary":
+        # Calculate BER for binary (sigmoid) outputs
+        # Convert sigmoid outputs to binary values
         binary_predictions = torch.round(decoded_output)
+        # Calculate the bitwise errors
         prediction_errors = torch.ne(binary_predictions, inputs)
+        # Compute the BER as the mean of bitwise errors
         BER = torch.mean(prediction_errors.float()).detach().cpu().item()
     else:
         raise ValueError("Unsupported mode. Choose 'symbol' or 'binary'.")
@@ -85,13 +71,10 @@ def setup_logging():
                         format='%(asctime)s:%(levelname)s:%(message)s')
 
 def test_model(encoder, decoder, config, ebno_db):
-    """
-    Test the model over a specified Eb/N0 and return BER and BLER.
-    """
+    """Test the model over a specified Eb/N0 and return the BER."""
     encoder.eval()
     decoder.eval()
-    ber_list = []
-    bler_list = []
+    ber = []
     num_batches = int(config['test_size'] / config['batch_size'])
 
     with torch.no_grad():
@@ -100,52 +83,24 @@ def test_model(encoder, decoder, config, ebno_db):
             encoded_data = encoder(input_data)
             noisy_data = awgn_channel(encoded_data, ebno_db, config['rate'], config['device'])
             decoded_output = decoder(noisy_data)
-            
-            # Compute BER and BLER
-            ber_list.append(compute_ber(decoded_output, input_data, mode="binary"))
-            bler_list.append(compute_bler(decoded_output, input_data, mode="binary"))
+            ber.append(compute_ber(decoded_output, input_data, mode="binary"))
 
-    avg_ber = np.mean(ber_list)
-    avg_bler = np.mean(bler_list)
-    logging.info(f"Eb/N0: {ebno_db} dB, Test BER: {avg_ber:.4e}, Test BLER: {avg_bler:.4e}")
-    return avg_ber, avg_bler
+    avg_ber = np.mean(ber)
+    logging.info(f"Eb/N0: {ebno_db} dB, Test BER: {avg_ber:.4e}")
+    return avg_ber
 
-def plot_ber_results(ebno_range, ber_results, labels, save_path="results/ber_comparison.png"):
-    """
-    Plot BER results.
-    """
+def plot_results(ebno_range, results, labels, save_path="results/ber_comparison.png"):
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plt.figure(figsize=(10, 6))
-    
-    for i, ber in enumerate(ber_results):
-        plt.semilogy(ebno_range, ber, label=labels[i], linestyle="--")
-    
+    for i, result in enumerate(results):
+        plt.semilogy(ebno_range, result, label=labels[i])
     plt.xlabel(r"$E_b/N_0$ (dB)")
     plt.ylabel("Bit Error Rate (BER)")
     plt.grid(which="both", linestyle="--", linewidth=0.5)
     plt.legend()
     plt.title("BER Performance Comparison")
     plt.savefig(save_path, bbox_inches="tight")
-    logging.info(f"BER plot saved to {save_path}")
-    plt.close()
-
-def plot_bler_results(ebno_range, bler_results, labels, save_path="results/bler_comparison.png"):
-    """
-    Plot BLER results.
-    """
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    plt.figure(figsize=(10, 6))
-    
-    for i, bler in enumerate(bler_results):
-        plt.semilogy(ebno_range, bler, label=labels[i], linestyle="-")
-    
-    plt.xlabel(r"$E_b/N_0$ (dB)")
-    plt.ylabel("Block Error Rate (BLER)")
-    plt.grid(which="both", linestyle="--", linewidth=0.5)
-    plt.legend()
-    plt.title("BLER Performance Comparison")
-    plt.savefig(save_path, bbox_inches="tight")
-    logging.info(f"BLER plot saved to {save_path}")
+    logging.info(f"Plot saved to {save_path}")
     plt.close()
 
 def main():
@@ -159,10 +114,7 @@ def main():
         'sequence_length': 64,
         'num_symbols': 2,
         'rate': 64 / 128,
-        'device': torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-        'enc_num_layers' : 3,
-        'dec_num_layers' : 2,
-        'hidden_size_gru' : 4      
+        'device': torch.device("cuda" if torch.cuda.is_available() else "cpu")
     }
 
     # List of models to test
@@ -174,9 +126,7 @@ def main():
                     block_len=config['sequence_length'],
                     enc_num_unit=100,
                     dec_num_unit=100,
-                    batch_size=config['batch_size'],
-                    enc_num_layer=config['enc_num_layers'],
-                    dec_num_layer=config['dec_num_layers']
+                    batch_size=config['batch_size']
                 )),
                 'interleaver': (interleaver := Interleaver(config_params).to(config['device'])),
                 'encoder': lambda: (
@@ -198,9 +148,7 @@ def main():
                     block_len=config['sequence_length'],
                     enc_num_unit=100,
                     dec_num_unit=100,
-                    batch_size=config['batch_size'],
-                    enc_num_layer= config['enc_num_layers'],
-                    dec_num_layer=config['dec_num_layers']
+                    batch_size=config['batch_size']
                 )),
                 'interleaver': (interleaver := Interleaver(config_params).to(config['device'])),
                 'encoder': lambda: (
@@ -240,10 +188,7 @@ def main():
                     block_len=config['sequence_length'],
                     enc_num_unit=100,
                     dec_num_unit=100,
-                    batch_size=config['batch_size'],
-                    enc_num_layer= config['enc_num_layers'],
-                    hidden_size_gru=config['hidden_size_gru'],
-                    dec_num_layer=config['dec_num_layers']
+                    batch_size=config['batch_size']
                 )),
                 'interleaver': (interleaver := Interleaver(config_params).to(config['device'])),
                 'encoder': lambda: (
@@ -280,8 +225,7 @@ def main():
         labels.append(model['name'])
 
     # Plot and save results
-    plot_ber_results(config['ebno_range'], results, labels, save_path="results/ber_comparison.png")
-    plot_bler_results(config['ebno_range'], results, labels, save_path="results/ber_comparison.png")
+    plot_results(config['ebno_range'], results, labels, save_path="results/ber_comparison.png")
 
 if __name__ == '__main__':
     main()
