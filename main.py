@@ -4,6 +4,7 @@ import torch
 import numpy as np
 import argparse
 import os
+import random
 
 # Seeds
 np.random.seed(42)
@@ -25,7 +26,7 @@ parser.add_argument('--model_type', type=str, default='gru_turbo', help="Model t
 parser.add_argument('--num_symbols', type=int, default=2, help="Number of Symbols (2 for bits)")
 parser.add_argument('--batch_size', type=int, default=128, help="Batch size")
 parser.add_argument('--dec_bs_fac', type=int, default=4, help="Decoder Batch Size Factor")
-parser.add_argument('--sample_size', type=int, default=5000, help="Number of samples")
+parser.add_argument('--sample_size', type=int, default=50000, help="Number of samples")
 parser.add_argument('--sequence_length', type=int, default=64, help="Sequence length")
 parser.add_argument('--channel_length', type=int, default=128, help="Channel length")
 parser.add_argument('--epochs', type=int, default=500, help="Number of epochs")
@@ -61,7 +62,8 @@ def setup_logging():
     if not os.path.exists(log_directory):
         os.makedirs(log_directory)
     date_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f'training_RS_NET_{date_str}.log'
+    random_number = random.randint(1000,9999)
+    filename = f'training_{args.model_type}_{date_str}_{random_number}.log'
     log_path = os.path.join(log_directory, filename)
     logging.basicConfig(filename=log_path, level=logging.INFO,
                         format='%(asctime)s:%(levelname)s:%(message)s')
@@ -90,6 +92,15 @@ def main():
         I = 4
         encoder = model_prod.ProductAEEncoder(K, N).to(device)
         decoder = model_prod.ProdDecoder(I, K, N).to(device)
+        
+    elif config['model_type'] == 'rnn_turbo':
+        config_params = model_TAE.TurboConfig(block_len=config['sequence_length'],
+                                              enc_num_unit=100,
+                                              dec_num_unit=100,
+                                              batch_size=config['batch_size'])
+        interleaver = model_TAE.Interleaver(config_params).to(device)
+        encoder = model_TAE.ENC_rnn_rate2(config_params, interleaver).to(device)
+        decoder = model_TAE.DEC_LargeMinRNNTurbo(config_params, interleaver).to(device)
         
     elif config['model_type'] == 'CNN_turbo_serial':
         config_params = model_TAE.TurboConfig(block_len=config['sequence_length'],
@@ -127,7 +138,7 @@ def main():
         decoder = torch.nn.DataParallel(decoder)
     
     train.train_model_alternate(encoder, decoder, device, **config)
-    #train.overfit_single_batch(encoder, decoder, device, **config) # For testing
+    #train.overfit_single_batch(encoder, decoder, device, **config)
     
     save_models(encoder, decoder, config['model_type'])
     
@@ -143,8 +154,9 @@ def save_models(encoder, decoder, model_type):
 
     if os.path.exists(encoder_save_path) or os.path.exists(decoder_save_path):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        encoder_save_path = os.path.join(model_save_dir, f"{model_type}_encoder_{timestamp}.pth")
-        decoder_save_path = os.path.join(model_save_dir, f"{model_type}_decoder_{timestamp}.pth")
+        random_number = random.randint(1000,9999)
+        encoder_save_path = os.path.join(model_save_dir, f"{model_type}_encoder_{timestamp}_{random_number}.pth")
+        decoder_save_path = os.path.join(model_save_dir, f"{model_type}_decoder_{timestamp}_{random_number}.pth")
 
     # Save the models
     torch.save(encoder.state_dict(), encoder_save_path)
