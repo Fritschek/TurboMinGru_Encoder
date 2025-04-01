@@ -146,7 +146,6 @@ class ENC_GRUTurbo(nn.Module):
     
         x_sys = self.enc_rnn_1(inputs)  # (batch_size, seq_len, hidden_size)
 
-        # Second minGRU layer with interleaved inputs
         inputs_interleaved = self.interleaver.interleave(inputs)
         x_p1 = self.enc_rnn_2(inputs_interleaved)  # (batch_size, seq_len, hidden_size)
 
@@ -179,7 +178,6 @@ class ENC_GRUTurbo_h(nn.Module):
     
         x_sys = self.enc_rnn_1(inputs)  # (batch_size, seq_len, hidden_size)
 
-        # Second minGRU layer with interleaved inputs
         inputs_interleaved = self.interleaver.interleave(inputs)
         x_p1 = self.enc_rnn_2(inputs_interleaved)  # (batch_size, seq_len, hidden_size)
 

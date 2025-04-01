@@ -17,15 +17,6 @@ def generate_data(batch_size, sequence_length, num_symbols):
 def compute_ber(decoded_output, inputs, num_symbols=None, mode="symbol"):
     """
     Calculate the Bit Error Rate (BER) for different types of decoded outputs.
-
-    Arguments:
-        decoded_output (torch.Tensor): Predicted outputs, either softmax/one-hot encoded or binary.
-        inputs (torch.Tensor): Ground truth values, either symbol indices or binary values.
-        num_symbols (int, optional): Number of unique symbols (required for "symbol" mode).
-        mode (str): "symbol" for one-hot encoded outputs or "binary" for sigmoid outputs.
-
-    Returns:
-        float: Calculated BER.
     """
     if mode == "symbol":
         # Calculate Symbol Error Rate (SER) for softmax/one-hot encoded outputs
@@ -170,6 +161,8 @@ def train_model(encoder, decoder, device, epochs, batch_size, sequence_length, n
         logging.info(f"Epoch [{epoch}/{epochs}], Loss: {np.mean(loss_):.4f}, Ber: {np.mean(ber):.4f}")
         if (epoch + 1) % 10 == 0:
             test_model(encoder, decoder, sample_size, batch_size, sequence_length, num_symbols, ebno_db, rate, device)
+            encoder.train()
+            decoder.train()
         
     print("Training finished.")
 
@@ -183,15 +176,6 @@ def train_model_alternate(encoder, decoder, device, epochs, batch_size, dec_bs_f
         decoder = nn.DataParallel(decoder)
 
     total_batches = int(sample_size / batch_size)
-    
-    #def encoder_forward(inputs, h_0=None, update_hidden=True):
-    #    # Dynamically handle hidden states based on encoder type
-    #    if update_hidden and h_0 is not None:
-    #        encoded_data, *hidden_states = encoder(inputs, *h_0)
-    #        hidden_states = [h.detach() for h in hidden_states]  # Detach to prevent backprop across batches
-    #        return encoded_data, hidden_states
-    #    else:
-    #        return encoder(inputs), None  # Encoder does not require hidden states
 
     for epoch in range(epochs):
         ber, loss_ = [],[]
@@ -232,6 +216,8 @@ def train_model_alternate(encoder, decoder, device, epochs, batch_size, dec_bs_f
         logging.info(f"Decoder: Epoch [{epoch+1}/{epochs}], Loss: {np.mean(loss_):.6f}, Ber: {np.mean(ber):.6f}")
         if (epoch + 1) % 50 == 0:
             test_model(encoder, decoder, sample_size, batch_size, sequence_length, num_symbols, ebno_db, rate, device)
+            encoder.train()
+            decoder.train()
     logging.info("Training finished.")
     
     

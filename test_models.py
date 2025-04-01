@@ -18,19 +18,13 @@ def compute_bler(decoded_output, inputs, mode="symbol", num_symbols=None):
         if num_symbols is None:
             raise ValueError("num_symbols must be specified when mode is 'symbol'")
         
-        # Get predicted symbols from softmax or one-hot encoded outputs
         predicted_symbols = torch.argmax(decoded_output, dim=-1)
-        # Calculate block errors (any symbol error in a sequence marks the block as erroneous)
         block_errors = (predicted_symbols != inputs).any(dim=1).float()
-        # Calculate BLER
         BLER = torch.mean(block_errors).detach().cpu().item()
 
     elif mode == "binary":
-        # Calculate BLER for binary (sigmoid) outputs
         binary_predictions = torch.round(decoded_output)
-        # Check if there is at least one error in each block
         block_errors = torch.any(binary_predictions != inputs, dim=1).float()
-        # Calculate BLER as the mean of block errors
         BLER = torch.mean(block_errors).detach().cpu().item()
     else:
         raise ValueError("Unsupported mode. Choose 'symbol' or 'binary'.")
@@ -46,11 +40,8 @@ def compute_ber(decoded_output, inputs, num_symbols=None, mode="symbol"):
         if num_symbols is None:
             raise ValueError("num_symbols must be specified when mode is 'symbol'")
 
-        # Get predicted symbols from softmax or one-hot encoded outputs
         predicted_symbols = torch.argmax(decoded_output, dim=-1)
-        # Calculate the number of symbol errors
         symbol_errors = (predicted_symbols != inputs).sum().item()
-        # Calculate Symbol Error Rate (SER)
         SER = symbol_errors / inputs.numel()
         
         # Convert SER to BER
@@ -58,12 +49,8 @@ def compute_ber(decoded_output, inputs, num_symbols=None, mode="symbol"):
         BER = SER * bits_per_symbol
 
     elif mode == "binary":
-        # Calculate BER for binary (sigmoid) outputs
-        # Convert sigmoid outputs to binary values
         binary_predictions = torch.round(decoded_output)
-        # Calculate the bitwise errors
         prediction_errors = torch.ne(binary_predictions, inputs)
-        # Compute the BER as the mean of bitwise errors
         BER = torch.mean(prediction_errors.float()).detach().cpu().item()
     else:
         raise ValueError("Unsupported mode. Choose 'symbol' or 'binary'.")

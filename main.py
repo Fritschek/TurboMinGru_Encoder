@@ -91,17 +91,6 @@ def main():
         encoder = model_prod.ProductAEEncoder(K, N).to(device)
         decoder = model_prod.ProdDecoder(I, K, N).to(device)
         
-    elif config['model_type'] == 'rnn_turbo':
-        config_params = model_TAE.TurboConfig(block_len=config['sequence_length'],
-                                              enc_num_unit=100,
-                                              dec_num_unit=100,
-                                              batch_size=config['batch_size'])
-        interleaver = model_TAE.Interleaver(config_params).to(device)
-        encoder = model_TAE.ENC_rnn_rate2(config_params, interleaver).to(device)
-        #decoder = model_TAE.DEC_CNNTurbo_serial(config_params, interleaver).to(device)
-        decoder = model_TAE.DEC_LargeMinRNNTurbo(config_params, interleaver).to(device)
-        #decoder = model_TAE.DEC_GRUTurbo_test(config_params, interleaver).to(device)
-        
     elif config['model_type'] == 'CNN_turbo_serial':
         config_params = model_TAE.TurboConfig(block_len=config['sequence_length'],
                                               enc_num_unit=100,
@@ -113,8 +102,6 @@ def main():
         interleaver = model_TAE.Interleaver(config_params).to(device)
         encoder = model_TAE.ENC_CNNTurbo_serial(config_params, interleaver).to(device)
         decoder = model_TAE.DEC_CNNTurbo_serial(config_params, interleaver).to(device)
-        #decoder = model_TAE.DEC_LargeMinRNNTurbo(config_params, interleaver).to(device)
-        #decoder = model_TAE.DEC_GRUTurbo_test(config_params, interleaver).to(device)
         
     elif config['model_type'] == 'gru_turbo':
         config_params = model_TAE.TurboConfig(block_len=config['sequence_length'],
@@ -128,8 +115,6 @@ def main():
         interleaver = model_TAE.Interleaver(config_params).to(device)
         encoder = model_TAE.ENC_GRUTurbo(config_params, interleaver).to(device)
         decoder = model_TAE.DEC_CNNTurbo(config_params, interleaver).to(device)
-        #decoder = model_TAE.DEC_LargeMinRNNTurbo(config_params, interleaver).to(device)
-        #decoder = model_TAE.DEC_GRUTurbo_test(config_params, interleaver).to(device)
                                        
 
     NN_size = count_parameters(encoder) + count_parameters(decoder)
@@ -142,7 +127,7 @@ def main():
         decoder = torch.nn.DataParallel(decoder)
     
     train.train_model_alternate(encoder, decoder, device, **config)
-    #train.overfit_single_batch(encoder, decoder, device, **config)
+    #train.overfit_single_batch(encoder, decoder, device, **config) # For testing
     
     save_models(encoder, decoder, config['model_type'])
     
